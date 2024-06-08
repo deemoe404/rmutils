@@ -1,0 +1,15 @@
+# Ignore DS_Store on macOS
+.DS_Store
+
+# Ignore test files
+*.avi
+
+# Ignore everything in the configuration folders & files
+.vscode/
+.idea/
+*.code-workspace
+CMakePresets.json
+
+# Ignore build files
+out/
+build/
