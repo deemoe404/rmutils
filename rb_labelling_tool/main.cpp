@@ -1,6 +1,16 @@
-/// To keep minimum dependencies, I used cvui library for GUI.
-/// cvui is a header-only library that uses OpenCV under the hood.
-/// You can find the library at https://github.com/Dovyski/cvui/
+/**
+ * @file main.cpp
+ * @brief RoboBraver labelling tool
+ * @author deemoe
+ *
+ * @details This tool is used to label contours in a video file.
+ * To keep minimum dependencies, I used cvui library for GUI.
+ * cvui is a header-only library that uses OpenCV under the hood,
+ * you can find the library at https://github.com/Dovyski/cvui/
+ *
+ * @version 0.1
+ * @date 2024-06-08
+ */
 
 #include <opencv2/opencv.hpp>
 #include <iostream>
@@ -26,13 +36,14 @@ std::vector<cv::Scalar> color_map;
  * @param frame     Original frame
  * @param threshold Threshold value for binary thresholding
  * @return cv::Mat Processed frame
+ *
+ * @todo Pass in Gray image to avoid color conversion (let the coneversion be done in GUI related functions)
  */
 cv::Mat image_processing(cv::Mat frame, int threshold = 50)
 {
     cv::Mat gray;
     gray = frame.clone();
 
-    // Todo: Pass in Gray image to avoid color conversion (let the coneversion be done in GUI related functions)
     cv::cvtColor(gray, gray, cv::COLOR_BGR2GRAY);
     cv::threshold(gray, gray, threshold, 255, cv::THRESH_BINARY);
     cv::cvtColor(gray, gray, cv::COLOR_GRAY2BGR);
