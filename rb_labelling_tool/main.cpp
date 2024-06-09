@@ -14,20 +14,40 @@
 #define WINDOW_NAME "RoboBraver labelling tool (Press ESC to close the window)"
 #define SCREEN_DPI 192
 #define SCALING_FACTOR 0.4 * SCREEN_DPI / 96
-#define PANAEL_HEIGHT 512
+#define PANEL_HEIGHT 512
 
 std::vector<cv::Scalar> color_map;
 
+/**
+ * @brief Apply image processing to the frame
+ *
+ * Change this function to apply different image processing techniques you need.
+ *
+ * @param frame     Original frame
+ * @param threshold Threshold value for binary thresholding
+ * @return cv::Mat Processed frame
+ */
 cv::Mat image_processing(cv::Mat frame, int threshold = 50)
 {
     cv::Mat gray;
     gray = frame.clone();
+
+    // Todo: Pass in Gray image to avoid color conversion (let the coneversion be done in GUI related functions)
     cv::cvtColor(gray, gray, cv::COLOR_BGR2GRAY);
     cv::threshold(gray, gray, threshold, 255, cv::THRESH_BINARY);
     cv::cvtColor(gray, gray, cv::COLOR_GRAY2BGR);
     return gray;
 }
 
+/**
+ * @brief Get contours from the binary image
+ *
+ * Change this function to apply different contour detection techniques you need.
+ * (such as acreage filtering, convex hull, etc.)
+ *
+ * @param input Binary image
+ * @return std::vector<std::vector<cv::Point>> Contours
+ */
 std::vector<std::vector<cv::Point>> get_contours(cv::Mat &input)
 {
     cv::Mat binary;
@@ -502,7 +522,7 @@ int main(int argc, const char *argv[])
 
     cv::Mat canvas = cv::Mat(cv::Size(
                                  (int)cap.get(cv::CAP_PROP_FRAME_WIDTH) * 2,
-                                 (int)cap.get(cv::CAP_PROP_FRAME_HEIGHT) + PANAEL_HEIGHT),
+                                 (int)cap.get(cv::CAP_PROP_FRAME_HEIGHT) + PANEL_HEIGHT),
                              CV_8UC3);
     int frame_count = (int)cap.get(cv::CAP_PROP_FRAME_COUNT) - 1;
 
