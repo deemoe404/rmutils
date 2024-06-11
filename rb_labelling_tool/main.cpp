@@ -10,13 +10,16 @@
  *
  * @version 0.1
  * @date 2024-06-08
+ * @todo Save parameters to a configuration file
+ * @todo Add support for resuming from uncompleted labelling sections
  */
 
-#include <opencv2/opencv.hpp>
 #include <iostream>
 #include <fstream>
 #include <random>
 #include <ctime>
+
+#include <opencv2/opencv.hpp>
 
 #define CVUI_IMPLEMENTATION
 #include "include/cvui.h"
@@ -25,8 +28,7 @@
 #define SCREEN_DPI 192
 #define SCALING_FACTOR 0.4 * SCREEN_DPI / 96
 #define PANEL_HEIGHT 512
-
-std::vector<cv::Scalar> color_map;
+#define PRIDICT_DISTANCE 10
 
 /**
  * @brief Apply image processing to the frame
@@ -242,10 +244,12 @@ void draw_canvas(cv::Mat &canvas, cv::Mat &frame, cv::Mat &processed, int thresh
 }
 
 void visual_piars(
-    cv::Mat &canvas,
     std::vector<std::pair<int, std::vector<std::pair<int, int>>>> &positive_pairs,
     std::vector<std::pair<int, std::vector<std::pair<int, std::vector<cv::Point>>>>> &saved_data,
-    int current_frame, int offset = 0)
+    std::vector<cv::Scalar> color_map,
+    cv::Mat &canvas,
+    int current_frame,
+    int offset = 0)
 {
     std::vector<std::vector<cv::Point>> contour_1, contour_2;
 
@@ -284,13 +288,18 @@ void visual_piars(
                 cv::Scalar rand_color = color_map[(pair.first + pair.second) % color_map.size()];
                 if (contour_1.size() > 0 && contour_2.size() > 0)
                 {
+                    cv::Moments mu_1 = cv::moments(contour_1[0]);
+                    cv::Moments mu_2 = cv::moments(contour_2[0]);
+                    cv::Point mass_center_1 = cv::Point(mu_1.m10 / mu_1.m00, mu_1.m01 / mu_1.m00),
+                              mass_center_2 = cv::Point(mu_2.m10 / mu_2.m00, mu_2.m01 / mu_2.m00);
+
                     cv::drawContours(canvas, {contour_1}, -1, rand_color, 6, cv::FILLED);
                     cv::drawContours(canvas, {contour_2}, -1, rand_color, 6, cv::FILLED);
-                    cv::line(canvas, contour_1[0][0], contour_2[0][0], rand_color, 2);
+                    cv::line(canvas, mass_center_1, mass_center_2, rand_color, 2);
 
                     cv::drawContours(canvas, {contour_1}, -1, rand_color, 6, cv::FILLED, cv::noArray(), INT_MAX, cv::Point(offset, 0));
                     cv::drawContours(canvas, {contour_2}, -1, rand_color, 6, cv::FILLED, cv::noArray(), INT_MAX, cv::Point(offset, 0));
-                    cv::line(canvas, contour_1[0][0] + cv::Point(offset, 0), contour_2[0][0] + cv::Point(offset, 0), rand_color, 2);
+                    cv::line(canvas, mass_center_1 + cv::Point(offset, 0), mass_center_2 + cv::Point(offset, 0), rand_color, 2);
                 }
             }
         }
@@ -312,7 +321,15 @@ void visual_hover(
     }
 }
 
-void save_contours(std::vector<std::pair<int, std::vector<std::pair<int, std::vector<cv::Point>>>>> &saved_data,
+/**
+ * @brief Save contours to the data structure
+ *
+ * @param saved_data     Data structure to save the contours
+ * @param frame_contours Contours to save
+ * @param frame_index    Frame index
+ * @return bool          True if the frame is new frame
+ */
+bool save_contours(std::vector<std::pair<int, std::vector<std::pair<int, std::vector<cv::Point>>>>> &saved_data,
                    std::vector<std::vector<cv::Point>> &frame_contours,
                    int frame_index)
 {
@@ -334,6 +351,7 @@ void save_contours(std::vector<std::pair<int, std::vector<std::pair<int, std::ve
             saved_data.back().second.push_back({i, frame_contours[i]});
         }
     }
+    return !found;
 }
 
 void print_saved(std::vector<std::pair<int, std::vector<std::pair<int, std::vector<cv::Point>>>>> &saved_data)
@@ -522,7 +540,7 @@ void read_data(
 
 int main(int argc, const char *argv[])
 {
-    color_map = generateColors(200);
+    std::vector<cv::Scalar> color_map = generateColors(200);
 
     cv::VideoCapture cap("../../../output.avi");
     if (!cap.isOpened() || (int)cap.get(cv::CAP_PROP_FRAME_COUNT) == 0)
@@ -562,7 +580,7 @@ int main(int argc, const char *argv[])
     {
         int hover = get_hover(video_contours, cvui::mouse().x, cvui::mouse().y, current_frame);
         draw_canvas(canvas, frame, processed, threshold, current_frame);
-        visual_piars(canvas, positive_pairs, video_contours, current_frame, frame.cols);
+        visual_piars(positive_pairs, video_contours, color_map, canvas, current_frame, frame.cols);
         visual_hover(canvas, video_contours, hover, current_frame, contour_buffer == -1 ? "1" : "2", frame.cols);
 
         cvui::update();
@@ -577,6 +595,8 @@ int main(int argc, const char *argv[])
             break;
         case 27:
             return 0;
+
+        // Adjust threshold
         case '=':
             threshold = threshold < 255 ? threshold + 1 : 0;
             video_contours.clear();
@@ -587,6 +607,8 @@ int main(int argc, const char *argv[])
             video_contours.clear();
             positive_pairs.clear();
             break;
+
+        // Frame navigation
         case '[':
             current_frame = current_frame > 0 ? current_frame - 1 : frame_count;
             break;
@@ -599,6 +621,8 @@ int main(int argc, const char *argv[])
         case 'p':
             current_frame = current_frame - 100 < 0 ? frame_count : current_frame - 100;
             break;
+
+        // Mark pair
         case 'w':
             if (contour_buffer == -1)
             {
@@ -650,6 +674,8 @@ int main(int argc, const char *argv[])
                 contour_buffer = -1;
             }
             break;
+
+        // Remove pair
         case 'e':
             for (auto &positive_pair : positive_pairs)
             {
@@ -666,18 +692,144 @@ int main(int argc, const char *argv[])
                 }
             }
             break;
+
+        // Save data
         case 's':
             std::string date = get_date();
             write_data(video_contours, positive_pairs, date + ".rb_data", date + ".rb_positive");
             break;
         }
+
+        // Read new frame
         if (key > -1 || frame.empty())
         {
             cap.set(cv::CAP_PROP_POS_FRAMES, current_frame);
             cap.read(frame);
             processed = image_processing(frame, threshold);
             contours = get_contours(processed);
-            save_contours(video_contours, contours, current_frame);
+
+            // new frame, do pridiction
+            if (save_contours(video_contours, contours, current_frame))
+            {
+                int prev_frame = current_frame > 0 ? current_frame - 1 : frame_count,
+                    next_frame = current_frame < frame_count ? current_frame + 1 : 0;
+
+                bool found_prev = false, found_next = false;
+
+                // check if the previous and next frame were labeled
+                for (auto &positive_pair : positive_pairs)
+                {
+                    if (positive_pair.first == prev_frame && positive_pair.second.size() > 0)
+                    {
+                        found_prev = true;
+                    }
+                    if (positive_pair.first == next_frame && positive_pair.second.size() > 0)
+                    {
+                        found_next = true;
+                    }
+                }
+
+                if (found_prev || found_next)
+                {
+                    std::vector<std::pair<int, cv::Point>> mass_centers;
+                    for (auto &frame_contours : video_contours)
+                    {
+                        if (frame_contours.first == current_frame)
+                        {
+                            for (auto &contour : frame_contours.second)
+                            {
+                                cv::Moments mu = cv::moments(contour.second);
+                                mass_centers.push_back({contour.first,
+                                                        cv::Point(mu.m10 / mu.m00, mu.m01 / mu.m00)});
+                            }
+                            break;
+                        }
+                    }
+
+                    int target = found_prev ? prev_frame : next_frame;
+
+                    std::vector<std::pair<int, int>> pairs;
+                    for (auto &positive_pair : positive_pairs)
+                    {
+                        if (positive_pair.first == target)
+                        {
+                            pairs = positive_pair.second;
+                            break;
+                        }
+                    }
+
+                    positive_pairs.push_back({current_frame, {}});
+                    for (auto &pair : pairs)
+                    {
+                        std::vector<cv::Point> contour_1, contour_2;
+                        for (auto &frame_contours : video_contours)
+                        {
+                            if (frame_contours.first == target)
+                            {
+                                for (auto &contour : frame_contours.second)
+                                {
+                                    if (contour.first == pair.first)
+                                    {
+                                        contour_1 = contour.second;
+                                    }
+                                    if (contour.first == pair.second)
+                                    {
+                                        contour_2 = contour.second;
+                                    }
+                                }
+                            }
+                        }
+
+                        // get mass center for contour 1 and 2
+                        cv::Moments mu_1 = cv::moments(contour_1);
+                        cv::Moments mu_2 = cv::moments(contour_2);
+                        cv::Point mass_center_1 = cv::Point(mu_1.m10 / mu_1.m00, mu_1.m01 / mu_1.m00),
+                                  mass_center_2 = cv::Point(mu_2.m10 / mu_2.m00, mu_2.m01 / mu_2.m00);
+
+                        // find nearest mass center for contour 1
+                        int nearest_1 = -1;
+                        double min_distance_1 = DBL_MAX;
+                        cv::Point nearest_mass_center_1;
+                        for (int i = 0; i < mass_centers.size(); i++)
+                        {
+                            double distance = cv::norm(mass_center_1 - mass_centers[i].second);
+                            if (distance < min_distance_1)
+                            {
+                                min_distance_1 = distance;
+                                nearest_1 = mass_centers[i].first;
+                                nearest_mass_center_1 = mass_centers[i].second;
+                            }
+                        }
+
+                        // find nearest mass center for contour 2
+                        int nearest_2 = -1;
+                        double min_distance_2 = DBL_MAX;
+                        cv::Point nearest_mass_center_2;
+                        for (int i = 0; i < mass_centers.size(); i++)
+                        {
+                            double distance = cv::norm(mass_center_2 - mass_centers[i].second);
+                            if (distance < min_distance_2)
+                            {
+                                min_distance_2 = distance;
+                                nearest_2 = mass_centers[i].first;
+                                nearest_mass_center_2 = mass_centers[i].second;
+                            }
+                        }
+
+                        if (min_distance_1 < PRIDICT_DISTANCE && min_distance_2 < PRIDICT_DISTANCE)
+                        {
+                            for (auto &positive_pair : positive_pairs)
+                            {
+                                if (positive_pair.first == current_frame)
+                                {
+                                    positive_pair.second.push_back({nearest_1, nearest_2});
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
     return 0;
